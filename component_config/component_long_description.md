@@ -1,0 +1,1 @@
+Komercni Banka PDF Account Statement Parser long description
