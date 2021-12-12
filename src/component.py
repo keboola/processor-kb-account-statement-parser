@@ -3,20 +3,18 @@ Template Component main class.
 
 '''
 import csv
+import hashlib
 import logging
-from datetime import datetime
+from configparser import ParsingError
+from dataclasses import asdict
+from pathlib import Path
 
 from keboola.component.base import ComponentBase
+from keboola.component.dao import FileDefinition, TableDefinition
 from keboola.component.exceptions import UserException
 
-# configuration variables
-KEY_API_TOKEN = '#api_token'
-KEY_PRINT_HELLO = 'print_hello'
-
-# list of mandatory parameters => if some is missing,
-# component will fail with readable message on initialization.
-REQUIRED_PARAMETERS = [KEY_PRINT_HELLO]
-REQUIRED_IMAGE_PARS = []
+from kb_parser import parser as statement_parser
+from kb_parser.parser import StatementRow, StatementMetadata
 
 
 class Component(ComponentBase):
@@ -33,44 +31,107 @@ class Component(ComponentBase):
     def __init__(self):
         super().__init__()
 
+        # init table definitions
+        self.statements_table: TableDefinition
+        self.statement_metadata_table: TableDefinition
+
+    def _init_tables(self):
+        statement_columns = ['pk', 'statement_metadata_pk', 'row_nr']
+        statement_columns.extend(list(StatementRow.__annotations__.keys()))
+
+        statement_metadata_columns = ['pk']
+        statement_metadata_columns.extend(list(StatementMetadata.__annotations__.keys()))
+
+        self.statements_table = self.create_out_table_definition('statements.csv', incremental=True,
+                                                                 columns=statement_columns,
+                                                                 is_sliced=True,
+                                                                 primary_key=['pk'])
+        self.statement_metadata_table = self.create_out_table_definition('statements_metadata.csv', incremental=True,
+                                                                         columns=statement_metadata_columns,
+                                                                         is_sliced=True,
+                                                                         primary_key=['pk', 'statement_pk'])
+
     def run(self):
         '''
         Main execution code
         '''
 
-        # ####### EXAMPLE TO REMOVE
-        # check for missing configuration parameters
-        self.validate_configuration_parameters(REQUIRED_PARAMETERS)
-        self.validate_image_parameters(REQUIRED_IMAGE_PARS)
-        params = self.configuration.parameters
-        # Access parameters in data/config.json
-        if params.get(KEY_PRINT_HELLO):
-            logging.info("Hello World")
+        self._init_tables()
 
-        # get last state data/in/state.json from previous run
-        previous_state = self.get_state_file()
-        logging.info(previous_state.get('some_state_parameter'))
+        input_files = self.get_input_files_definitions(only_latest_files=False)
 
-        # Create output table (Tabledefinition - just metadata)
-        table = self.create_out_table_definition('output.csv', incremental=True, primary_key=['timestamp'])
+        pdf_files = [f for f in input_files if f.full_path.endswith('.pdf')]
+        logging.info(f"{len(pdf_files)} PDF files found on the input.")
 
-        # get file path of the table (data/out/tables/Features.csv)
-        out_table_path = table.full_path
-        logging.info(out_table_path)
+        try:
+            for file in pdf_files:
+                logging.info(f"Parsing file {file.name}")
+                self._parse_to_csv(file)
 
-        # DO whatever and save into out_table_path
-        with open(table.full_path, mode='wt', encoding='utf-8', newline='') as out_file:
-            writer = csv.DictWriter(out_file, fieldnames=['timestamp'])
-            writer.writeheader()
-            writer.writerow({"timestamp": datetime.now().isoformat()})
+        except ParsingError as e:
+            raise UserException(e) from e
+        except Exception:
+            raise
 
-        # Save table manifest (output.csv.manifest) from the tabledefinition
-        self.write_manifest(table)
+        # write manifest
+        if pdf_files:
+            self.write_manifest(self.statements_table)
+            self.write_manifest(self.statement_metadata_table)
 
-        # Write new state - will be available next run
-        self.write_state_file({"some_state_parameter": "value"})
+    def _parse_to_csv(self, pdf_file: FileDefinition):
+        """
+        Parse PDF statements and store as Sliced csv files.
+        Args:
+            pdf_file: FileDefinition
 
-        # ####### EXAMPLE TO REMOVE END
+        Returns:
+
+        """
+        data_path = Path(f"{self.statements_table.full_path}/{pdf_file.name}.csv")
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata_path = Path(f"{self.statement_metadata_table.full_path}/{pdf_file.name}.csv")
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(data_path, 'w+', encoding='utf-8') as statement_out, \
+                open(metadata_path, 'w+', encoding='utf-8') as metadata_out:
+
+            data_writer = csv.DictWriter(statement_out, fieldnames=self.statements_table.columns)
+            metadata_writer = csv.DictWriter(metadata_out, fieldnames=self.statement_metadata_table.columns)
+
+            metadata_pkey = None
+            idx = 0
+            for data, metadata in statement_parser.parse_full_statement(pdf_file.full_path):
+                dict_row = asdict(data)
+
+                if not metadata_pkey:
+                    metadata_pkey = self._build_statement_metadata_pk(metadata)
+
+                dict_row['pk'] = self._build_statement_row_pk(idx, data, metadata_pkey)
+                dict_row['statement_metadata_pk'] = metadata_pkey
+                dict_row['row_nr'] = idx
+
+                data_writer.writerow(dict_row)
+
+                idx += 1
+
+            # write metadata
+            if metadata:
+                metadata_row = asdict(metadata)
+                metadata_row['pk'] = metadata_pkey
+                metadata_writer.writerow(metadata_row)
+
+    @staticmethod
+    def _build_statement_row_pk(idx: int, data: StatementRow, metadata_pkey: str):
+        composed_key = [idx, data.transaction_date, metadata_pkey]
+        key_str = '|'.join([str(k) for k in composed_key])
+        return hashlib.md5(key_str.encode()).hexdigest()
+
+    @staticmethod
+    def _build_statement_metadata_pk(metadata: StatementMetadata):
+        composed_key = [metadata.statement_date, metadata.account_number, metadata.statement_number,
+                        metadata.statement_type, metadata.currency]
+        key_str = '|'.join([str(k) for k in composed_key])
+        return hashlib.md5(key_str.encode()).hexdigest()
 
 
 """

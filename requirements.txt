@@ -1,5 +1,6 @@
-keboola.component==1.3.5
+keboola.component==1.3.6
 keboola.utils
 keboola.http-client
+tabula-py
 mock
 freezegun
