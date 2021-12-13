@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import List, Iterator, Tuple
+from typing import List, Iterator, Tuple, Union
 
 import tabula
 
@@ -24,6 +24,10 @@ class HeaderTemplatePaths(Enum):
     report_metadata = Path(_get_templates_directory(), 'report_metadata_header.tabula-template.json').as_posix()
     account_entity = Path(_get_templates_directory(), 'account_entity_header.tabula-template.json').as_posix()
     total_balance = Path(_get_templates_directory(), 'total_balance_header.tabula-template.json').as_posix()
+
+
+class DataTemplatePaths(Enum):
+    last_page = Path(_get_templates_directory(), 'last_page.tabula-template.json').as_posix()
 
 
 @dataclass
@@ -106,11 +110,14 @@ def _convert_na_to_empty(string: str):
     return str(string).replace('nan', '')
 
 
-def _load_header_section_from_template(file_path: str, section_name: str, template_path: HeaderTemplatePaths):
+def _load_header_section_from_template(file_path: str, section_name: str,
+                                       template_path: Union[HeaderTemplatePaths, DataTemplatePaths],
+                                       pages='1', stream=False):
     try:
         df = tabula.read_pdf_with_template(file_path, template_path.value,
                                            pandas_options=PANDAS_OPTIONS,
-                                           pages='1')[0]
+                                           stream=stream,
+                                           pages=pages)[0]
         return df.to_dict('records')
     except KeyError:
         raise ParserError(f'Statement {Path(file_path).name} does not contain the {section_name} '
@@ -289,11 +296,18 @@ def parse_statement_metadata(file_path: str) -> StatementMetadata:
 
 
 def _get_full_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
+    pages_nr = len(tabula.read_pdf(file_path, guess=False, pages='all'))
+
     for df in tabula.read_pdf(file_path,
                               stream=True,
                               pandas_options=PANDAS_OPTIONS,
-                              pages='all'):
+                              pages=f'1-{str(pages_nr - 1)}'):
         yield (row for row in df.to_dict('records'))
+
+    # Sometimes the last page is not parsed properly so use predefined template
+    last_page_records = _load_header_section_from_template(file_path, 'last_page', DataTemplatePaths.last_page,
+                                                           str(pages_nr), stream=True)
+    yield (row for row in last_page_records)
 
 
 def _validate_statement_header_first_row(column_names: List[str], column_number=5):
@@ -331,6 +345,11 @@ def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[bool, b
     """
     first_row = next(statement_page)
 
+    if len(first_row) == 4:
+        merge_columns = False
+    else:
+        merge_columns = True
+
     # Some reports have recap page at the end. Skip that from parsing
     if list(first_row.keys())[0] == 'Rekapitulace transakcí na účtu':
         return False, True
@@ -357,11 +376,6 @@ def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[bool, b
             raise ParserError("The Statement Page Header has more rows than expected!")
         if row[dict_keys[0]] == 'transakce':
             break
-
-    if len(first_row) == 4:
-        merge_columns = False
-    else:
-        merge_columns = True
 
     return merge_columns, False
 
