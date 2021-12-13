@@ -78,6 +78,8 @@ class Component(ComponentBase):
             self.write_manifest(self.statements_table)
             self.write_manifest(self.statement_metadata_table)
 
+        logging.info("Parsing finished successfully!")
+
     def _parse_to_csv(self, pdf_file: FileDefinition):
         """
         Parse PDF statements and store as Sliced csv files.
