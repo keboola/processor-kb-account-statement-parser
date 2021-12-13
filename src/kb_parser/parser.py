@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import List, Iterator, Tuple, Union
+from typing import List, Iterator, Tuple, Union, Callable
 
 import tabula
 
@@ -331,32 +331,34 @@ def _validate_statement_header_first_row(column_names: List[str], column_number=
                           f"\nf{'; '.join(errors)}")
 
 
-def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[bool, bool]:
+def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[Callable, bool]:
     """
     Iterates and validates the statement page header.
-    Returns flag whether to merge columns from 5 to 4 and flag whether to skip the table from processing.
+    Returns function to modify the records to expected structure
     This can happen when there's some other type of table detected.
 
     Args:
         statement_page: (Iterator[dict]) Iterator of page rows.
 
-    Returns: merge_columns:bool, skip_page:bool
+    Returns: merge_columns:bool, convert_function:Callable
 
     """
     first_row = next(statement_page)
-
+    dict_keys = list(first_row.keys())
     if len(first_row) == 4:
-        merge_columns = False
+        convert_method = _pass
+    elif len(first_row) == 5 and dict_keys[0] == 'Datum Popis transakce' and dict_keys[4] == 'Unnamed: 0':
+        convert_method = _drop_last_column
+    elif len(first_row) == 5 and dict_keys[0] == 'Datum':
+        convert_method = _merge_first_two_columns
     else:
-        merge_columns = True
+        raise ParserError(f"Statement Page Header has different amount of columns [{len(first_row)}] than expected")
+
+    first_row = convert_method(first_row)
 
     # Some reports have recap page at the end. Skip that from parsing
     if list(first_row.keys())[0] == 'Rekapitulace transakcí na účtu':
-        return False, True
-
-    # Sometimes the first two columns are merged
-    if not len(first_row) in [4, 5]:
-        raise ParserError(f"Statement Page Header has different amount of columns [{len(first_row)}] than expected")
+        return _pass, True
 
     dict_keys = list(first_row.keys())
 
@@ -377,7 +379,7 @@ def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[bool, b
         if row[dict_keys[0]] == 'transakce':
             break
 
-    return merge_columns, False
+    return convert_method, False
 
 
 def _split_date_from_text(text: str):
@@ -445,6 +447,12 @@ def _is_date_text_split(text):
     return contains_date
 
 
+# # Record modifying functions
+
+def _pass(row: dict):
+    return row
+
+
 def _merge_first_two_columns(row: dict):
     # TODO: Consider reversing the process => unmerging two columns as it seems only first page has this issue
     new_dict = {}
@@ -458,23 +466,25 @@ def _merge_first_two_columns(row: dict):
     return new_dict
 
 
-def _get_next_transformed(page_iterator: Iterator[dict], merge_first_columns=False):
+def _drop_last_column(row: dict):
+    row.pop(list(row.keys())[-1:][0])
+    return row
+
+
+def _get_next_transformed(page_iterator: Iterator[dict], convert_method: Callable = _pass):
     row = next(page_iterator, {})
-    if row and merge_first_columns:
-        return _merge_first_two_columns(row)
-    else:
-        return row
+    return convert_method(row)
 
 
 def _parse_next_statement_row(page_iterator: Iterator[dict],
-                              merge_first_columns=False,
+                              convert_method: Callable = _pass,
                               first_row_part=None) -> Tuple[StatementRow, dict]:
     """
     Builds statement data row from multiple row parts.
 
     Args:
         page_iterator: Iterator of page rows
-        merge_first_columns: Flag whether to modify the output structure to match the expected.
+        convert_method: Flag whether to modify the output structure to match the expected.
                              Sometimes the first two columns are merged, if not (5 columns) this flag should be set
                              to true.
         first_row_part: Next statement row returned from the method
@@ -484,7 +494,7 @@ def _parse_next_statement_row(page_iterator: Iterator[dict],
     """
     statement_row_data = StatementRow()
     # Sometimes the first two are merged, merge to 4 which is expected
-    merge_cols = merge_first_columns
+    merge_cols = convert_method
 
     # if starting from the beginning
     if not first_row_part:
@@ -539,7 +549,7 @@ def parse_full_statement(file_path: str) -> Tuple[StatementRow, StatementMetadat
     for page_iterator in _get_full_statement_rows(file_path):
         pages_processed += 1
         logging.info(f"Processing page #{pages_processed}")
-        merge_columns, skip = _skip_statement_data_header(page_iterator)
+        convert_method, skip = _skip_statement_data_header(page_iterator)
 
         # end reached
         if skip:
@@ -548,7 +558,7 @@ def parse_full_statement(file_path: str) -> Tuple[StatementRow, StatementMetadat
         has_next = True
         next_page = None
         while has_next:
-            data, next_page = _parse_next_statement_row(page_iterator, merge_columns, next_page)
+            data, next_page = _parse_next_statement_row(page_iterator, convert_method, next_page)
             if not next_page:
                 has_next = False
 

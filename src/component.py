@@ -14,7 +14,7 @@ from keboola.component.dao import FileDefinition, TableDefinition
 from keboola.component.exceptions import UserException
 
 from kb_parser import parser as statement_parser
-from kb_parser.parser import StatementRow, StatementMetadata
+from kb_parser.parser import StatementRow, StatementMetadata, ParserError
 
 
 class Component(ComponentBase):
@@ -68,7 +68,7 @@ class Component(ComponentBase):
                 logging.info(f"Parsing file {file.name}")
                 self._parse_to_csv(file)
 
-        except ParsingError as e:
+        except ParserError as e:
             raise UserException(e) from e
         except Exception:
             raise
