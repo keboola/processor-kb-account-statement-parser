@@ -400,7 +400,7 @@ def _parse_second_statement_row_part(row_data: List[str], statement_row_data: St
     # try to split date
     try:
         date, identification_text = _split_date_from_text(row_data[0])
-    except:
+    except ValueError:
         date = ''
         identification_text = row_data[0]
 
