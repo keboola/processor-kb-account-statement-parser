@@ -5,7 +5,6 @@ Template Component main class.
 import csv
 import hashlib
 import logging
-from configparser import ParsingError
 from dataclasses import asdict
 from pathlib import Path
 
