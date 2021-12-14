@@ -5,6 +5,7 @@ Template Component main class.
 import csv
 import hashlib
 import logging
+import shutil
 from dataclasses import asdict
 from pathlib import Path
 
@@ -123,6 +124,9 @@ class Component(ComponentBase):
                 metadata_row['pk'] = metadata_pkey
                 metadata_writer.writerow(metadata_row)
 
+            # move in_tables untouched
+            self._move_in_tables()
+
     @staticmethod
     def _build_statement_row_pk(idx: int, data: StatementRow, metadata_pkey: str):
         composed_key = [idx, data.transaction_date, metadata_pkey]
@@ -135,6 +139,14 @@ class Component(ComponentBase):
                         metadata.statement_type, metadata.currency]
         key_str = '|'.join([str(k) for k in composed_key])
         return hashlib.md5(key_str.encode()).hexdigest()
+
+    def _move_in_tables(self):
+        for t in self.get_input_tables_definitions():
+            source_path = t.full_path
+            t.full_path = t.full_path.replace('in', 'out')
+            t.stage = 'out'
+            shutil.move(source_path, t.full_path)
+            self.write_manifest(t)
 
 
 """
