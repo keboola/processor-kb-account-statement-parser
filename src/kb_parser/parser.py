@@ -1,5 +1,8 @@
+import json
 import logging
+import math
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -99,8 +102,8 @@ def _validate_row_structure(row: dict, column_count: int, section_name: str) -> 
     return list(row.keys())
 
 
-def _convert_to_numeric(number_str: str):
-    formatted = number_str.replace(',', '.')
+def _convert_to_numeric(number_str: Union[float, str]):
+    formatted = str(number_str).replace(',', '.')
     pattern = re.compile(r'\s+')
     formatted = re.sub(pattern, '', formatted)
     return float(formatted)
@@ -110,14 +113,32 @@ def _convert_na_to_empty(string: str):
     return str(string).replace('nan', '')
 
 
-def _load_header_section_from_template(file_path: str, section_name: str,
-                                       template_path: Union[HeaderTemplatePaths, DataTemplatePaths],
-                                       pages='1', stream=False):
+def _load_single_page_section_from_template(file_path: str, section_name: str,
+                                            template_path: Union[HeaderTemplatePaths, DataTemplatePaths],
+                                            page_nr='1', stream=False):
+    """
+    Load data from sepcified templated located on single page
+    Args:
+        file_path: path to pdf file
+        section_name:
+        template_path: path to template
+        page_nr: number of the page
+        stream:
+
+    Returns:
+
+    """
+    _id, path = tempfile.mkstemp()
+    with open(template_path.value, 'r') as template_in, open(path, 'w') as tmp_out:
+        template_json = json.load(template_in)
+        template_json[0]['page'] = page_nr
+        json.dump(template_json, tmp_out)
+
     try:
-        df = tabula.read_pdf_with_template(file_path, template_path.value,
+        df = tabula.read_pdf_with_template(file_path, path,
                                            pandas_options=PANDAS_OPTIONS,
                                            stream=stream,
-                                           pages=pages)[0]
+                                           pages=page_nr)[0]
         return df.to_dict('records')
     except KeyError:
         raise ParserError(f'Statement {Path(file_path).name} does not contain the {section_name} '
@@ -134,7 +155,8 @@ def _parse_account_type_metadata(file_path: str, statement_metadata: StatementMe
     Returns:
 
     """
-    dict_rows = _load_header_section_from_template(file_path, 'Account type section', HeaderTemplatePaths.account_type)
+    dict_rows = _load_single_page_section_from_template(file_path, 'Account type section',
+                                                        HeaderTemplatePaths.account_type)
 
     # validate initial
     if len(dict_rows) < 4:
@@ -179,7 +201,7 @@ def _parse_report_metadata(file_path: str, statement_metadata: StatementMetadata
 
     """
     section_name = 'Report Metadata section'
-    dict_rows = _load_header_section_from_template(file_path, section_name, HeaderTemplatePaths.report_metadata)
+    dict_rows = _load_single_page_section_from_template(file_path, section_name, HeaderTemplatePaths.report_metadata)
 
     # validate initial
     if len(dict_rows) < 3:
@@ -216,7 +238,7 @@ def _parse_balance_section_metadata(file_path: str, statement_metadata: Statemen
 
     """
     section_name = 'Report Balance section'
-    dict_rows = _load_header_section_from_template(file_path, section_name, HeaderTemplatePaths.total_balance)
+    dict_rows = _load_single_page_section_from_template(file_path, section_name, HeaderTemplatePaths.total_balance)
 
     # validate initial
     if len(dict_rows) < 1:
@@ -255,18 +277,22 @@ def _parse_entity_section(file_path: str, statement_metadata: StatementMetadata)
 
     """
     section_name = 'Account Entity section'
-    dict_rows = _load_header_section_from_template(file_path, section_name, HeaderTemplatePaths.account_entity)
+    dict_rows = _load_single_page_section_from_template(file_path, section_name, HeaderTemplatePaths.account_entity)
 
     # validate initial
     if len(dict_rows) < 1:
         raise ParserError(f"{section_name} section is missing some rows!")
 
-    if len(dict_rows[0]) != 2:
+    if len(dict_rows[0]) > 2:
         raise ParserError(f"{section_name} has different amount of columns {len(dict_rows[0])}"
                           f" than expected!")
 
     column_name_key = list(dict_rows[0].keys())[0]
-    second_column_key = list(dict_rows[0].keys())[1]
+    second_column_key = ''
+
+    # sometimes the columns are split
+    if len(dict_rows[0]) == 2:
+        second_column_key = list(dict_rows[0].keys())[1]
 
     entity_rows = [f'{column_name_key} {second_column_key}\n']
     for row in dict_rows:
@@ -296,22 +322,25 @@ def parse_statement_metadata(file_path: str) -> StatementMetadata:
 
 
 def _get_full_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
-    pages_nr = len(tabula.read_pdf(file_path, guess=False, pages='all'))
-
     for df in tabula.read_pdf(file_path,
                               stream=True,
                               pandas_options=PANDAS_OPTIONS,
-                              pages=f'1-{str(pages_nr - 1)}'):
+                              pages='all'):
         yield (row for row in df.to_dict('records'))
 
+
+def _get_last_page_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
+    pages_nr = len(tabula.read_pdf(file_path, guess=False, pages='all'))
+
     # Sometimes the last page is not parsed properly so use predefined template
-    last_page_records = _load_header_section_from_template(file_path, 'last_page', DataTemplatePaths.last_page,
-                                                           str(pages_nr), stream=True)
+    last_page_records = _load_single_page_section_from_template(file_path, 'last_page', DataTemplatePaths.last_page,
+                                                                str(pages_nr), stream=True)
     yield (row for row in last_page_records)
 
 
 def _validate_statement_header_first_row(column_names: List[str], column_number=5):
-    first_row_keys_4 = [['Datum Popis transakce'], ['Název protiúčtu / Číslo a typ karty'], ['VS'], ['Připsáno']]
+    first_row_keys_4 = [['Datum Popis transakce'], ['Název protiúčtu / Číslo a typ karty', 'Unnamed: 0'],
+                        ['VS', 'Název protiúčtu / Číslo a typ karty'], ['Připsáno', 'VS']]
     first_row_keys_5 = [['Datum', 'Datum Popis transakce'], ['Popis transakce', 'Unnamed: 0'],
                         ['Název protiúčtu / Číslo a typ karty'], ['VS'], ['Připsáno']]
     if column_number == 5:
@@ -345,20 +374,23 @@ def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[Callabl
     """
     first_row = next(statement_page)
     dict_keys = list(first_row.keys())
+
+    # Some reports have recap page at the end. Skip that from parsing
+    if list(first_row.keys())[0] == 'Rekapitulace transakcí na účtu':
+        return _pass, True
+
     if len(first_row) == 4:
         convert_method = _pass
-    elif len(first_row) == 5 and dict_keys[0] == 'Datum Popis transakce' and dict_keys[4] == 'Unnamed: 0':
+    elif len(first_row) == 5 and dict_keys[0] == 'Datum Popis transakce' and dict_keys[4] in ['Unnamed: 0']:
         convert_method = _drop_last_column
+    elif len(first_row) == 5 and dict_keys[0] == 'Datum Popis transakce' and dict_keys[1] in ['Unnamed: 0']:
+        convert_method = _merge_second_two_columns
     elif len(first_row) == 5 and dict_keys[0] == 'Datum':
         convert_method = _merge_first_two_columns
     else:
         raise ParserError(f"Statement Page Header has different amount of columns [{len(first_row)}] than expected")
 
     first_row = convert_method(first_row)
-
-    # Some reports have recap page at the end. Skip that from parsing
-    if list(first_row.keys())[0] == 'Rekapitulace transakcí na účtu':
-        return _pass, True
 
     dict_keys = list(first_row.keys())
 
@@ -376,7 +408,7 @@ def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[Callabl
         skipped_rows += 1
         if skipped_rows > 4:
             raise ParserError("The Statement Page Header has more rows than expected!")
-        if row[dict_keys[0]] == 'transakce':
+        if list(row.values())[0] == 'transakce':
             break
 
     return convert_method, False
@@ -430,12 +462,16 @@ def _parse_second_statement_row_part(row_data: List[str], statement_row_data: St
 def _parse_third_statement_row_part(row_data: List[str], statement_row_data: StatementRow):
     identification_text = _convert_na_to_empty(row_data[0])
     statement_row_data.transaction_identification += f"\n{identification_text}"
+
     statement_row_data.ss = _convert_na_to_empty(row_data[2])
 
 
 def _is_end_of_statement_data(row: dict):
     row_values = list(row.values())
-    return len(row_values) == 0 or row_values[0] == 'KONEČNÝ ZŮSTATEK'
+    values_string = ' '.join([str(v) for v in row_values])
+    end_of_page = 'Pokračování na další straně' in values_string
+
+    return len(row_values) == 0 or row_values[0] == 'KONEČNÝ ZŮSTATEK' or end_of_page
 
 
 def _is_date_text_split(text):
@@ -463,6 +499,22 @@ def _merge_first_two_columns(row: dict):
 
     for idx, val in enumerate(values[2:], start=2):
         new_dict[keys[idx]] = val
+
+    return new_dict
+
+
+def _merge_second_two_columns(row: dict):
+    new_dict = {}
+    keys = list(row.keys())
+    values = list(row.values())
+
+    for idx, val in enumerate(values):
+
+        if idx == 2:
+            new_dict[keys[2 - 1]] = _convert_na_to_empty(new_dict[keys[2 - 1]]) + _convert_na_to_empty(val)
+        else:
+            new_dict[keys[idx]] = val
+
     return new_dict
 
 
@@ -539,16 +591,10 @@ def _parse_next_statement_row(page_iterator: Iterator[dict],
     return statement_row_data, next_page
 
 
-def parse_full_statement(file_path: str) -> Tuple[StatementRow, StatementMetadata]:
-    statement_metadata = parse_statement_metadata(file_path)
-    pages_processed = 0
-    # for validation
-    debit_total = 0
-    credit_total = 0
-
-    for page_iterator in _get_full_statement_rows(file_path):
-        pages_processed += 1
-        logging.info(f"Processing page #{pages_processed}")
+def _iterate_through_rows(pages_iterator, processing_metadata: dict):
+    for page_iterator in pages_iterator:
+        processing_metadata['pages_processed'] += 1
+        logging.info(f"Processing page #{processing_metadata['pages_processed']}")
         convert_method, skip = _skip_statement_data_header(page_iterator)
 
         # end reached
@@ -564,15 +610,40 @@ def parse_full_statement(file_path: str) -> Tuple[StatementRow, StatementMetadat
 
             # validation
             if data.amount < 0:
-                debit_total += data.amount
+                processing_metadata['debit_total'] += data.amount
             else:
-                credit_total += data.amount
+                processing_metadata['credit_total'] += data.amount
 
-            yield data, statement_metadata
+            yield data
 
-    total_sum = debit_total + credit_total
+
+def parse_full_statement(file_path: str) -> Tuple[StatementRow, StatementMetadata]:
+    statement_metadata = parse_statement_metadata(file_path)
+    processing_metadata = dict(
+        pages_processed=0,
+        # for validation
+        debit_total=0,
+        credit_total=0)
+
+    iterator = _iterate_through_rows(_get_full_statement_rows(file_path),
+                                     processing_metadata=processing_metadata)
+    for i in iterator:
+        yield i, statement_metadata
+
+    total_sum = processing_metadata['debit_total'] + processing_metadata['credit_total']
     total_sum_check = statement_metadata.end_balance - statement_metadata.start_balance
-    if round(total_sum, 1) != round(total_sum_check, 1):
+    if math.ceil(total_sum) != math.ceil(total_sum_check):
+        # Possibly the last page parsing failes, retry with template
+        logging.warning('The end sum does not match, trying to reprocess last page from template.')
+        processing_metadata['pages_processed'] -= 1
+        iterator = _iterate_through_rows(_get_last_page_statement_rows(file_path),
+                                         processing_metadata=processing_metadata)
+        for i in iterator:
+            yield i, statement_metadata
+
+    total_sum = processing_metadata['debit_total'] + processing_metadata['credit_total']
+    total_sum_check = statement_metadata.end_balance - statement_metadata.start_balance
+    if math.ceil(total_sum) != math.ceil(total_sum_check):
         raise ParserError(
             f"Parsed result ended with inconsistent data. The transaction sum from totals {total_sum_check} "
             f"is not equal to sum of individual transactions {total_sum}")
