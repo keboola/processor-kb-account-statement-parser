@@ -48,7 +48,7 @@ class Component(ComponentBase):
         self.statement_metadata_table = self.create_out_table_definition('statements_metadata.csv', incremental=True,
                                                                          columns=statement_metadata_columns,
                                                                          is_sliced=True,
-                                                                         primary_key=['pk', 'statement_pk'])
+                                                                         primary_key=['pk'])
 
     def run(self):
         '''
