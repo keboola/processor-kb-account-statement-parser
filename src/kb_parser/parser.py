@@ -13,6 +13,8 @@ import tabula
 
 PANDAS_OPTIONS = {'dtype': str}
 
+JAVA_OPTIONS = '-XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx200m'
+
 
 class ParserError(Exception):
     pass
@@ -137,6 +139,7 @@ def _load_single_page_section_from_template(file_path: str, section_name: str,
     try:
         df = tabula.read_pdf_with_template(file_path, path,
                                            pandas_options=PANDAS_OPTIONS,
+                                           java_options=JAVA_OPTIONS,
                                            stream=stream,
                                            pages=page_nr)[0]
         return df.to_dict('records')
@@ -325,12 +328,14 @@ def _get_full_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
     for df in tabula.read_pdf(file_path,
                               stream=True,
                               pandas_options=PANDAS_OPTIONS,
+                              java_options=JAVA_OPTIONS,
                               pages='all'):
         yield (row for row in df.to_dict('records'))
 
 
 def _get_last_page_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
-    pages_nr = len(tabula.read_pdf(file_path, guess=False, pages='all'))
+    pages_nr = len(tabula.read_pdf(file_path, guess=False, pages='all',
+                                   java_options=JAVA_OPTIONS))
 
     # Sometimes the last page is not parsed properly so use predefined template
     last_page_records = _load_single_page_section_from_template(file_path, 'last_page', DataTemplatePaths.last_page,
