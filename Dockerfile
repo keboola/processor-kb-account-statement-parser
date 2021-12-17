@@ -23,8 +23,7 @@ RUN pip install -r /code/requirements.txt
 WORKDIR /code/
 
 # set switch that enables correct JVM memory allocation in containers
-ENV MAVEN_OPTS="-XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx256m"
-ENV JAVA_OPTS="-XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx256m"
+ENV JAVA_OPTS="-XX:+UseContainerSupport"
 
 
 CMD ["python", "-u", "/code/src/component.py"]

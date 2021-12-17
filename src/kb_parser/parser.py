@@ -14,7 +14,7 @@ import tabula
 PANDAS_OPTIONS = {'dtype': str}
 
 # Limit the memory for docker execution
-JAVA_OPTIONS = '-XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx256m'
+JAVA_OPTIONS = '-XX:+UseContainerSupport'
 
 
 class ParserError(Exception):
