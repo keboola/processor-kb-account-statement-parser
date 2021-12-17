@@ -3,6 +3,7 @@ services:
   # for development purposes
   dev:
     build: .
+    mem_limit: 512m
     volumes:
         - ./:/code
         - ./data:/data

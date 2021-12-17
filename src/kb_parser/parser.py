@@ -14,7 +14,7 @@ import tabula
 PANDAS_OPTIONS = {'dtype': str}
 
 # Limit the memory for docker execution
-JAVA_OPTIONS = '-XX:+UseContainerSupport -Xmx312m'
+JAVA_OPTIONS = ''  # '-XX:+UseContainerSupport -Xmx312m'
 
 
 class ParserError(Exception):
@@ -380,6 +380,7 @@ def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[Callabl
     """
     first_row = next(statement_page)
     dict_keys = list(first_row.keys())
+    dict_values = list(first_row.values())
 
     # Some reports have recap page at the end. Skip that from parsing
     if list(first_row.keys())[0] == 'Rekapitulace transakcí na účtu':
@@ -387,6 +388,9 @@ def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[Callabl
 
     if len(first_row) == 4:
         convert_method = _pass
+    elif len(first_row) == 5 and dict_keys[0] == 'Datum Popis transakce' and dict_keys[4] in ['Unnamed: 0'] and \
+            dict_values[3] == 'Odepsáno':
+        convert_method = _merge_last_two_columns
     elif len(first_row) == 5 and dict_keys[0] == 'Datum Popis transakce' and dict_keys[4] in ['Unnamed: 0']:
         convert_method = _drop_last_column
     elif len(first_row) == 5 and dict_keys[0] == 'Datum Popis transakce' and dict_keys[1] in ['Unnamed: 0']:
@@ -527,6 +531,21 @@ def _merge_second_two_columns(row: dict):
 def _drop_last_column(row: dict):
     row.pop(list(row.keys())[-1:][0])
     return row
+
+
+def _merge_last_two_columns(row: dict):
+    new_dict = {}
+    keys = list(row.keys())
+    values = list(row.values())
+
+    for idx, val in enumerate(values):
+
+        if idx == 4:
+            new_dict[keys[4 - 1]] = _convert_na_to_empty(new_dict[keys[4 - 1]]) + _convert_na_to_empty(val)
+        else:
+            new_dict[keys[idx]] = val
+
+    return new_dict
 
 
 def _get_next_transformed(page_iterator: Iterator[dict], convert_method: Callable = _pass):
