@@ -14,7 +14,7 @@ import tabula
 PANDAS_OPTIONS = {'dtype': str}
 
 # Limit the memory for docker execution / requires JAVA 11
-JAVA_OPTIONS = '-XX:+UseContainerSupport -Xmx312m -XX:MinRAMPercentage=50 -XX:MaxRAMPercentage=80'
+JAVA_OPTIONS = '-XX:+UseContainerSupport -Xmx312m'
 
 
 class ParserError(Exception):
@@ -395,6 +395,9 @@ def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[Callabl
         convert_method = _drop_last_column
     elif len(first_row) == 5 and dict_keys[0] == 'Datum Popis transakce' and dict_keys[1] in ['Unnamed: 0']:
         convert_method = _merge_second_two_columns
+    elif len(first_row) == 6 and dict_keys[0] == 'Datum' and dict_keys[1] == 'Popis transakce' \
+            and dict_keys[2] in ['Unnamed: 0']:
+        convert_method = _merge_firsttwo_third_and_fourth_column
     elif len(first_row) == 5 and dict_keys[0] == 'Datum':
         convert_method = _merge_first_two_columns
     else:
@@ -513,6 +516,11 @@ def _merge_first_two_columns(row: dict):
     return new_dict
 
 
+def _merge_firsttwo_third_and_fourth_column(row: dict):
+    merged = _merge_neighbouring_columns(row, 3)
+    return _merge_first_two_columns(merged)
+
+
 def _merge_second_two_columns(row: dict):
     new_dict = {}
     keys = list(row.keys())
@@ -522,6 +530,22 @@ def _merge_second_two_columns(row: dict):
 
         if idx == 2:
             new_dict[keys[2 - 1]] = _convert_na_to_empty(new_dict[keys[2 - 1]]) + _convert_na_to_empty(val)
+        else:
+            new_dict[keys[idx]] = val
+
+    return new_dict
+
+
+def _merge_neighbouring_columns(row: dict, first_col_index: int):
+    new_dict = {}
+    keys = list(row.keys())
+    values = list(row.values())
+
+    for idx, val in enumerate(values):
+
+        if idx == first_col_index:
+            new_dict[keys[first_col_index - 1]] = _convert_na_to_empty(
+                new_dict[keys[first_col_index - 1]]) + _convert_na_to_empty(val)
         else:
             new_dict[keys[idx]] = val
 
