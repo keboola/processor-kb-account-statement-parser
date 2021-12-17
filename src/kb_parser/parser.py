@@ -13,8 +13,8 @@ import tabula
 
 PANDAS_OPTIONS = {'dtype': str}
 
-# Limit the memory for docker execution
-JAVA_OPTIONS = ''  # '-XX:+UseContainerSupport -Xmx312m'
+# Limit the memory for docker execution / requires JAVA 11
+JAVA_OPTIONS = '-XX:+UseContainerSupport -Xmx312m -XX:MinRAMPercentage=50 -XX:MaxRAMPercentage=80'
 
 
 class ParserError(Exception):
