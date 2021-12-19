@@ -14,7 +14,10 @@ import tabula
 PANDAS_OPTIONS = {'dtype': str}
 
 # Limit the memory for docker execution / requires JAVA 11
-JAVA_OPTIONS = '-XX:+UseContainerSupport -Xmx312m'
+JAVA_OPTIONS = ''  # '-XX:+UseContainerSupport -Xmx312m'
+
+# DATA_COLUMN_BOUNDARIES = [42.16, 223.0, 416.0, 465.0, 566.75]
+DATA_COLUMN_BOUNDARIES = [223.0, 416.0, 465.0, 566.75]
 
 
 class ParserError(Exception):
@@ -33,7 +36,8 @@ class HeaderTemplatePaths(Enum):
 
 
 class DataTemplatePaths(Enum):
-    last_page = Path(_get_templates_directory(), 'last_page.tabula-template.json').as_posix()
+    last_page_even = Path(_get_templates_directory(), 'last_page.tabula-template.json').as_posix()
+    last_page_odd = Path(_get_templates_directory(), 'last_page_odd.tabula-template.json').as_posix()
 
 
 @dataclass
@@ -118,7 +122,7 @@ def _convert_na_to_empty(string: str):
 
 def _load_single_page_section_from_template(file_path: str, section_name: str,
                                             template_path: Union[HeaderTemplatePaths, DataTemplatePaths],
-                                            page_nr='1', stream=False):
+                                            page_nr='1', stream=False, **kwargs):
     """
     Load data from sepcified templated located on single page
     Args:
@@ -142,7 +146,7 @@ def _load_single_page_section_from_template(file_path: str, section_name: str,
                                            pandas_options=PANDAS_OPTIONS,
                                            java_options=JAVA_OPTIONS,
                                            stream=stream,
-                                           pages=page_nr)[0]
+                                           pages=page_nr, **kwargs)[0]
         return df.to_dict('records')
     except KeyError:
         raise ParserError(f'Statement {Path(file_path).name} does not contain the {section_name} '
@@ -326,7 +330,9 @@ def parse_statement_metadata(file_path: str) -> StatementMetadata:
 
 
 def _get_full_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
+    # tabula.io.build_options(columns=DATA_COLUMN_BOUNDARIES)
     for df in tabula.read_pdf(file_path,
+                              columns=DATA_COLUMN_BOUNDARIES,
                               stream=True,
                               pandas_options=PANDAS_OPTIONS,
                               java_options=JAVA_OPTIONS,
@@ -334,13 +340,16 @@ def _get_full_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
         yield (row for row in df.to_dict('records'))
 
 
-def _get_last_page_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
-    pages_nr = len(tabula.read_pdf(file_path, guess=False, pages='all',
-                                   java_options=JAVA_OPTIONS))
+def _get_last_page_statement_rows(file_path: str, last_page_nr: int) -> Iterator[Iterator[dict]]:
+    if last_page_nr % 2 == 0:
+        template = DataTemplatePaths.last_page_even
+    else:
+        template = DataTemplatePaths.last_page_odd
 
     # Sometimes the last page is not parsed properly so use predefined template
-    last_page_records = _load_single_page_section_from_template(file_path, 'last_page', DataTemplatePaths.last_page,
-                                                                str(pages_nr), stream=True)
+    last_page_records = _load_single_page_section_from_template(file_path, 'last_page', template,
+                                                                str(last_page_nr), stream=True,
+                                                                columns=DATA_COLUMN_BOUNDARIES)
     yield (row for row in last_page_records)
 
 
@@ -383,7 +392,7 @@ def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[Callabl
     dict_values = list(first_row.values())
 
     # Some reports have recap page at the end. Skip that from parsing
-    if list(first_row.keys())[0] == 'Rekapitulace transakcí na účtu':
+    if list(first_row.keys())[0] in ['Rekapitulace transakcí na účtu', 'Rozpis poplatků za položky']:
         return _pass, True
 
     if len(first_row) == 4:
@@ -398,7 +407,7 @@ def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[Callabl
     elif len(first_row) == 6 and dict_keys[0] == 'Datum' and dict_keys[1] == 'Popis transakce' \
             and dict_keys[2] in ['Unnamed: 0']:
         convert_method = _merge_firsttwo_third_and_fourth_column
-    elif len(first_row) == 5 and dict_keys[0] == 'Datum':
+    elif len(first_row) == 5 and dict_keys[0] in ['Datum', 'Unnamed: 0']:
         convert_method = _merge_first_two_columns
     else:
         raise ParserError(f"Statement Page Header has different amount of columns [{len(first_row)}] than expected")
@@ -684,13 +693,14 @@ def parse_full_statement(file_path: str) -> Tuple[StatementRow, StatementMetadat
     if math.ceil(total_sum) != math.ceil(total_sum_check):
         # Possibly the last page parsing failes, retry with template
         logging.warning('The end sum does not match, trying to reprocess last page from template.')
+        last_page_nr = processing_metadata['pages_processed']
         processing_metadata['pages_processed'] -= 1
-        iterator = _iterate_through_rows(_get_last_page_statement_rows(file_path),
+        iterator = _iterate_through_rows(_get_last_page_statement_rows(file_path, last_page_nr + 1),
                                          processing_metadata=processing_metadata)
         for i in iterator:
             yield i, statement_metadata
 
-    total_sum = processing_metadata['debit_total'] + processing_metadata['credit_total']
+    total_sum = round(processing_metadata['debit_total'], 2) + round(processing_metadata['credit_total'], 2)
     total_sum_check = statement_metadata.end_balance - statement_metadata.start_balance
     if math.ceil(total_sum) != math.ceil(total_sum_check):
         raise ParserError(
