@@ -14,7 +14,7 @@ import tabula
 PANDAS_OPTIONS = {'dtype': str}
 
 # Limit the memory for docker execution / requires JAVA 11
-JAVA_OPTIONS = ''  # '-XX:+UseContainerSupport -Xmx312m'
+JAVA_OPTIONS = '-XX:+UseContainerSupport -Xmx312m'
 
 # DATA_COLUMN_BOUNDARIES = [42.16, 223.0, 416.0, 465.0, 566.75]
 DATA_COLUMN_BOUNDARIES = [223.0, 416.0, 465.0, 566.75]
@@ -144,7 +144,7 @@ def _load_single_page_section_from_template(file_path: str, section_name: str,
     try:
         df = tabula.read_pdf_with_template(file_path, path,
                                            pandas_options=PANDAS_OPTIONS,
-                                           java_options=JAVA_OPTIONS,
+                                           # java_options=JAVA_OPTIONS,
                                            stream=stream,
                                            pages=page_nr, **kwargs)[0]
         return df.to_dict('records')
@@ -335,12 +335,13 @@ def _get_full_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
                               columns=DATA_COLUMN_BOUNDARIES,
                               stream=True,
                               pandas_options=PANDAS_OPTIONS,
-                              java_options=JAVA_OPTIONS,
+                              # java_options=JAVA_OPTIONS,
                               pages='all'):
         yield (row for row in df.to_dict('records'))
 
 
-def _get_last_page_statement_rows(file_path: str, last_page_nr: int) -> Iterator[Iterator[dict]]:
+def _get_last_page_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
+    last_page_nr = len(tabula.read_pdf(file_path, guess=False, pages='all'))
     if last_page_nr % 2 == 0:
         template = DataTemplatePaths.last_page_even
     else:
@@ -354,8 +355,9 @@ def _get_last_page_statement_rows(file_path: str, last_page_nr: int) -> Iterator
 
 
 def _validate_statement_header_first_row(column_names: List[str], column_number=5):
-    first_row_keys_4 = [['Datum Popis transakce'], ['Název protiúčtu / Číslo a typ karty', 'Unnamed: 0'],
-                        ['VS', 'Název protiúčtu / Číslo a typ karty'], ['Připsáno', 'VS']]
+    first_row_keys_4 = [['Datum Popis transakce'],
+                        ['Název protiúčtu / Číslo a typ karty', 'Unnamed: 0', 'Název protiúčtu / Číslo a typ karty VS'],
+                        ['VS', 'Název protiúčtu / Číslo a typ karty', 'Unnamed: 0'], ['Připsáno', 'VS']]
     first_row_keys_5 = [['Datum', 'Datum Popis transakce'], ['Popis transakce', 'Unnamed: 0'],
                         ['Název protiúčtu / Číslo a typ karty'], ['VS'], ['Připsáno']]
     if column_number == 5:
@@ -688,14 +690,13 @@ def parse_full_statement(file_path: str) -> Tuple[StatementRow, StatementMetadat
     for i in iterator:
         yield i, statement_metadata
 
-    total_sum = processing_metadata['debit_total'] + processing_metadata['credit_total']
+    total_sum = round(processing_metadata['debit_total'], 2) + round(processing_metadata['credit_total'], 2)
     total_sum_check = statement_metadata.end_balance - statement_metadata.start_balance
     if math.ceil(total_sum) != math.ceil(total_sum_check):
         # Possibly the last page parsing failes, retry with template
         logging.warning('The end sum does not match, trying to reprocess last page from template.')
-        last_page_nr = processing_metadata['pages_processed']
         processing_metadata['pages_processed'] -= 1
-        iterator = _iterate_through_rows(_get_last_page_statement_rows(file_path, last_page_nr + 1),
+        iterator = _iterate_through_rows(_get_last_page_statement_rows(file_path),
                                          processing_metadata=processing_metadata)
         for i in iterator:
             yield i, statement_metadata
