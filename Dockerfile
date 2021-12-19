@@ -23,7 +23,7 @@ RUN pip install -r /code/requirements.txt
 WORKDIR /code/
 
 # set switch that enables correct JVM memory allocation in containers
-ENV JAVA_OPTS="-XX:+UseContainerSupport -Xmx312m"
+ENV JAVA_OPTS="-XX:+UseContainerSupport -Xmx512m"
 
 
 CMD ["python", "-u", "/code/src/component.py"]
