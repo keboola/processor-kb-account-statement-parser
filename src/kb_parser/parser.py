@@ -9,7 +9,10 @@ from enum import Enum
 from pathlib import Path
 from typing import List, Iterator, Tuple, Union, Callable
 
+import PyPDF2
 import tabula
+
+MAX_CHUNK_SIZE = 1000
 
 PANDAS_OPTIONS = {'dtype': str}
 
@@ -329,28 +332,44 @@ def parse_statement_metadata(file_path: str) -> StatementMetadata:
     return statement_metadata
 
 
+def _get_range_chunks(max_size, chunk_size):
+    for i in range(1, max_size, chunk_size):
+        if max_size < chunk_size + i:
+            end = max_size
+        else:
+            end = i + chunk_size
+        yield i, end
+
+
 def _get_full_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
     # tabula.io.build_options(columns=DATA_COLUMN_BOUNDARIES)
-    for df in tabula.read_pdf(file_path,
-                              columns=DATA_COLUMN_BOUNDARIES,
-                              stream=True,
-                              pandas_options=PANDAS_OPTIONS,
-                              java_options=JAVA_OPTIONS,
-                              pages='all'):
-        yield (row for row in df.to_dict('records'))
+
+    pdfReader = PyPDF2.PdfFileReader(file_path)
+    # printing number of pages in pdf file
+    max_pages = pdfReader.numPages
+
+    for start_range, end_range in _get_range_chunks(max_pages, MAX_CHUNK_SIZE):
+        for df in tabula.read_pdf(file_path,
+                                  columns=DATA_COLUMN_BOUNDARIES,
+                                  stream=True,
+                                  pandas_options=PANDAS_OPTIONS,
+                                  java_options=JAVA_OPTIONS,
+                                  pages=f'{start_range}-{end_range}'):
+            yield (row for row in df.to_dict('records'))
 
 
 def _get_last_page_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
-    last_page_nr = len(tabula.read_pdf(file_path, guess=False, pages='all',
-                                       java_options=JAVA_OPTIONS))
-    if last_page_nr % 2 == 0:
+    pdfReader = PyPDF2.PdfFileReader(file_path)
+    # printing number of pages in pdf file
+    max_pages = pdfReader.numPages
+    if max_pages % 2 == 0:
         template = DataTemplatePaths.last_page_even
     else:
         template = DataTemplatePaths.last_page_odd
 
     # Sometimes the last page is not parsed properly so use predefined template
     last_page_records = _load_single_page_section_from_template(file_path, 'last_page', template,
-                                                                str(last_page_nr), stream=True,
+                                                                str(max_pages), stream=True,
                                                                 columns=DATA_COLUMN_BOUNDARIES)
     yield (row for row in last_page_records)
 
