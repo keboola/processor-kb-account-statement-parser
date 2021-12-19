@@ -412,6 +412,8 @@ def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[Callabl
         convert_method = _merge_firsttwo_third_and_fourth_column
     elif len(first_row) == 5 and dict_keys[0] in ['Datum', 'Unnamed: 0']:
         convert_method = _merge_first_two_columns
+    elif len(first_row) == 6 and dict_keys[1] in ['Unnamed: 0'] and dict_keys[2] == 'Unnamed: 1':
+        convert_method = _drop_second_to_third_column
     else:
         raise ParserError(f"Statement Page Header has different amount of columns [{len(first_row)}] than expected")
 
@@ -565,7 +567,14 @@ def _merge_neighbouring_columns(row: dict, first_col_index: int):
 
 
 def _drop_last_column(row: dict):
-    row.pop(list(row.keys())[-1:][0])
+    row.pop(list(row.keys())[-1:])
+    return row
+
+
+def _drop_second_to_third_column(row: dict):
+    keys = list(row.keys())
+    row.pop(keys[1])
+    row.pop(keys[2])
     return row
 
 
