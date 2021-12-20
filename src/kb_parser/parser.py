@@ -332,21 +332,23 @@ def parse_statement_metadata(file_path: str) -> StatementMetadata:
     return statement_metadata
 
 
+def _get_pdf_page_count(file_path: str):
+    reader = PyPDF2.PdfFileReader(file_path)
+    # printing number of pages in pdf file
+    return reader.numPages
+
+
 def _get_range_chunks(max_size, chunk_size):
     for i in range(1, max_size, chunk_size):
         if max_size < chunk_size + i:
             end = max_size
         else:
-            end = i + chunk_size
+            end = i + chunk_size - 1
         yield i, end
 
 
 def _get_full_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
-    # tabula.io.build_options(columns=DATA_COLUMN_BOUNDARIES)
-
-    pdfReader = PyPDF2.PdfFileReader(file_path)
-    # printing number of pages in pdf file
-    max_pages = pdfReader.numPages
+    max_pages = _get_pdf_page_count(file_path)
 
     for start_range, end_range in _get_range_chunks(max_pages, MAX_CHUNK_SIZE):
         for df in tabula.read_pdf(file_path,
@@ -359,9 +361,7 @@ def _get_full_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
 
 
 def _get_last_page_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
-    pdfReader = PyPDF2.PdfFileReader(file_path)
-    # printing number of pages in pdf file
-    max_pages = pdfReader.numPages
+    max_pages = _get_pdf_page_count(file_path)
     if max_pages % 2 == 0:
         template = DataTemplatePaths.last_page_even
     else:
