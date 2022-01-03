@@ -1,6 +1,5 @@
 import json
 import logging
-import math
 import re
 import tempfile
 from dataclasses import dataclass
@@ -735,7 +734,7 @@ def parse_full_statement(file_path: str) -> Tuple[StatementRow, StatementMetadat
 
     total_sum = round(processing_metadata['debit_total'], 2) + round(processing_metadata['credit_total'], 2)
     total_sum_check = statement_metadata.end_balance - statement_metadata.start_balance
-    if math.ceil(total_sum) != math.ceil(total_sum_check):
+    if round(total_sum, 2) != round(total_sum_check, 2):
         # Possibly the last page parsing failes, retry with template
         logging.warning('The end sum does not match, trying to reprocess last page from template.')
         processing_metadata['pages_processed'] -= 1
@@ -746,7 +745,7 @@ def parse_full_statement(file_path: str) -> Tuple[StatementRow, StatementMetadat
 
     total_sum = round(processing_metadata['debit_total'], 2) + round(processing_metadata['credit_total'], 2)
     total_sum_check = statement_metadata.end_balance - statement_metadata.start_balance
-    if math.ceil(total_sum) != math.ceil(total_sum_check):
+    if round(total_sum, 2) != round(total_sum_check, 2):
         raise ParserError(
             f"Parsed result ended with inconsistent data. The transaction sum from totals {total_sum_check} "
             f"is not equal to sum of individual transactions {total_sum}")
