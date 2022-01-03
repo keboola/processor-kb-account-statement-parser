@@ -17,7 +17,7 @@ MAX_CHUNK_SIZE = 1000
 PANDAS_OPTIONS = {'dtype': str}
 
 # Limit the memory for docker execution / requires JAVA 11
-JAVA_OPTIONS = '-XX:+UseContainerSupport -Xmx480m -Xms480m'
+JAVA_OPTIONS = '-Xmx480m -Xms480m'
 
 # DATA_COLUMN_BOUNDARIES = [42.16, 223.0, 416.0, 465.0, 566.75]
 DATA_COLUMN_BOUNDARIES = [223.0, 416.0, 465.0, 566.75]
@@ -351,6 +351,7 @@ def _get_full_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
     max_pages = _get_pdf_page_count(file_path)
 
     for start_range, end_range in _get_range_chunks(max_pages, MAX_CHUNK_SIZE):
+        logging.info(f'Processing pages {start_range}-{end_range}')
         for df in tabula.read_pdf(file_path,
                                   columns=DATA_COLUMN_BOUNDARIES,
                                   stream=True,
@@ -397,7 +398,13 @@ def _validate_statement_header_first_row(column_names: List[str], column_number=
                           f"\nf{'; '.join(errors)}")
 
 
-def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[Callable, bool]:
+def _is_first_row_header(row: dict):
+    values = list(row.values())
+    dict_keys = list(row.keys())
+    return dict_keys[0] == 'POČÁTEČNÍ ZŮSTATEK' or values[0] == 'POČÁTEČNÍ ZŮSTATEK'
+
+
+def _skip_statement_data_header(statement_page: Iterator[dict], page_nr: int) -> Tuple[Callable, bool]:
     """
     Iterates and validates the statement page header.
     Returns function to modify the records to expected structure
@@ -436,23 +443,30 @@ def _skip_statement_data_header(statement_page: Iterator[dict]) -> Tuple[Callabl
     else:
         raise ParserError(f"Statement Page Header has different amount of columns [{len(first_row)}] than expected")
 
-    first_row = convert_method(first_row)
-
-    dict_keys = list(first_row.keys())
-
-    if dict_keys[0] == 'POČÁTEČNÍ ZŮSTATEK':
-        first_row_header = list(first_row.values())
+    if page_nr == 0:
+        # scroll to first row, if first page of the statement
+        while not _is_first_row_header(first_row):
+            try:
+                first_row = next(statement_page)
+            except StopIteration:
+                logging.error('Invalid header structure')
+                raise
     else:
-        first_row_header = dict_keys
+        first_row = convert_method(first_row)
+        dict_keys = list(first_row.keys())
+        if dict_keys[0] == 'POČÁTEČNÍ ZŮSTATEK':
+            first_row_header = list(first_row.values())
+        else:
+            first_row_header = dict_keys
 
-    _validate_statement_header_first_row(first_row_header, column_number=len(first_row))
+        _validate_statement_header_first_row(first_row_header, column_number=len(first_row))
 
     is_last_header_row = False
     skipped_rows = 1
     while not is_last_header_row:
         row = next(statement_page)
         skipped_rows += 1
-        if skipped_rows > 4:
+        if skipped_rows > 5:
             raise ParserError("The Statement Page Header has more rows than expected!")
         if list(row.values())[0] == 'transakce':
             break
@@ -683,8 +697,8 @@ def _parse_next_statement_row(page_iterator: Iterator[dict],
 def _iterate_through_rows(pages_iterator, processing_metadata: dict):
     for page_iterator in pages_iterator:
         processing_metadata['pages_processed'] += 1
-        logging.info(f"Processing page #{processing_metadata['pages_processed']}")
-        convert_method, skip = _skip_statement_data_header(page_iterator)
+        convert_method, skip = _skip_statement_data_header(page_iterator,
+                                                           page_nr=processing_metadata['pages_processed'])
 
         # end reached
         if skip:
