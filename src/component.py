@@ -5,10 +5,15 @@ Template Component main class.
 import csv
 import hashlib
 import logging
+import os
+import re
 import shutil
 from dataclasses import asdict
+from itertools import groupby
 from pathlib import Path
+from typing import List
 
+from PyPDF2 import PdfFileMerger, PdfFileReader
 from keboola.component.base import ComponentBase
 from keboola.component.dao import FileDefinition, TableDefinition
 from keboola.component.exceptions import UserException
@@ -63,6 +68,9 @@ class Component(ComponentBase):
         pdf_files = [f for f in input_files if f.full_path.endswith('.pdf')]
         logging.info(f"{len(pdf_files)} PDF files found on the input.")
 
+        # merge files that are split
+        pdf_files = self._merge_split_files(pdf_files)
+
         try:
             for file in pdf_files:
                 logging.info(f"Parsing file {file.name}")
@@ -79,6 +87,90 @@ class Component(ComponentBase):
             self.write_manifest(self.statement_metadata_table)
 
         logging.info("Parsing finished successfully!")
+
+    def _merge_pdfs(self, paths: List[str], result_path: str):
+        """
+        Merges pdfs into one.
+        Args:
+            paths:
+            result_path:
+
+        Returns:
+
+        """
+
+        # Call the PdfFileMerger
+        merged_object = PdfFileMerger()
+
+        for file in paths:
+            merged_object.append(PdfFileReader(file, 'rb'))
+
+        # Write all the files into a file which is named as shown below
+        merged_object.write(result_path)
+
+    def _merge_split_files(self, pdf_files) -> List[FileDefinition]:
+        """
+        Merges statement files and returns File objects.
+        Args:
+            pdf_files:
+
+        Returns:
+
+        """
+        r = re.compile(r'^(.*)\dz\d.pdf')
+        file_paths = [f.full_path for f in pdf_files]
+        files_to_merge = list(filter(r.match, file_paths))
+
+        # remove these files from the pdf_file list
+        normal_files = [f for f in pdf_files if f.full_path not in files_to_merge]
+
+        split_files = self._group_split_files(files_to_merge)
+        if len(split_files) > 0:
+            logging.info(f'{len(split_files)} files split files received, merging.')
+
+        result_files = []
+        for key in split_files:
+            result_path = f"{key}.pdf"
+            logging.info(f"Merging {len(split_files[key])} parts into {result_path}.")
+            file_definition = self._create_file_definition(name=Path(result_path).name, storage_stage='in')
+            self._merge_pdfs(split_files[key], file_definition.full_path)
+
+            # remove source files
+            self._delete_files(split_files[key])
+            result_files.append(file_definition)
+
+        result_files.extend(normal_files)
+
+        return result_files
+
+    def _delete_files(self, paths: List[str]):
+        for p in paths:
+            os.unlink(p)
+
+    def _group_split_files(self, split_files: List[str]):
+        """
+        Returns split files grouped by name
+        Args:
+            split_files:
+
+        Returns:
+
+        """
+
+        def group_key(name: str):
+            r = re.compile(r'^(.*)_\d+z\d+\.pdf')
+            group = r.match(name).group(1)
+            return group
+
+        def sort_key(name: str):
+            r = re.compile(r'^.*_(\d+z\d+)\.pdf')
+            group = r.match(name).group(1)
+            return group
+
+        files_to_merge = {}
+        for k, g in groupby(sorted(split_files, key=group_key), key=group_key):
+            files_to_merge[k] = sorted(list(g), key=sort_key)
+        return files_to_merge
 
     def _parse_to_csv(self, pdf_file: FileDefinition):
         """
