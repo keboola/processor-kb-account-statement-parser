@@ -158,7 +158,7 @@ class Component(ComponentBase):
         """
 
         def group_key(name: str):
-            r = re.compile(r'^(.*)_\d+z\d+\.pdf')
+            r = re.compile(r'^.*?(\d+_\d+_ucet_\d+)_\d+z\d+\.pdf')
             group = r.match(name).group(1)
             return group
 
