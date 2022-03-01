@@ -375,7 +375,7 @@ def _get_last_page_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
 
 
 def _validate_statement_header_first_row(column_names: List[str], column_number=5):
-    first_row_keys_4 = [['Datum Popis transakce'],
+    first_row_keys_4 = [['Datum Popis transakce', 'Datum Popis transakce Název protiúčtu / Číslo a typ karty'],
                         ['Název protiúčtu / Číslo a typ karty', 'Unnamed: 0', 'Název protiúčtu / Číslo a typ karty VS'],
                         ['VS', 'Název protiúčtu / Číslo a typ karty', 'Unnamed: 0'], ['Připsáno', 'VS']]
     first_row_keys_5 = [['Datum', 'Datum Popis transakce'], ['Popis transakce', 'Unnamed: 0'],
