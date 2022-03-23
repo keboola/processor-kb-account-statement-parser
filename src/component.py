@@ -194,6 +194,7 @@ class Component(ComponentBase):
 
             metadata_pkey = None
             idx = 0
+            metadata = None
             for data, metadata in statement_parser.parse_full_statement(pdf_file.full_path):
                 if not data:
                     continue
