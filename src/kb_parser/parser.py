@@ -729,7 +729,9 @@ def parse_full_statement(file_path: str) -> Tuple[StatementRow, StatementMetadat
 
     iterator = _iterate_through_rows(_get_full_statement_rows(file_path),
                                      processing_metadata=processing_metadata)
+    pages = 0
     for i in iterator:
+        pages = pages + 1
         yield i, statement_metadata
 
     total_sum = round(processing_metadata['debit_total'], 2) + round(processing_metadata['credit_total'], 2)
@@ -741,6 +743,7 @@ def parse_full_statement(file_path: str) -> Tuple[StatementRow, StatementMetadat
         iterator = _iterate_through_rows(_get_last_page_statement_rows(file_path),
                                          processing_metadata=processing_metadata)
         for i in iterator:
+            pages = pages + 1
             yield i, statement_metadata
 
     total_sum = round(processing_metadata['debit_total'], 2) + round(processing_metadata['credit_total'], 2)
@@ -749,3 +752,6 @@ def parse_full_statement(file_path: str) -> Tuple[StatementRow, StatementMetadat
         raise ParserError(
             f"Parsed result ended with inconsistent data. The transaction sum from totals {total_sum_check} "
             f"is not equal to sum of individual transactions {total_sum}")
+
+    if pages == 0:
+        yield None, statement_metadata
