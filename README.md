@@ -50,6 +50,26 @@ The data is outputted `incrementally`.
 }
 ```
  
+# Example Use Case
+
+Most commonly the processor is useful in combination with the [IMAP Email Content Extractor](https://help.keboola.com/components/extractors/communication/email-imap/)
+
+![email content](docs/imgs/email_content.png)
+
+Just include following processor configuration:
+
+```json
+{
+  "before": [],
+  "after": [
+    {
+      "definition": {
+        "component": "kds-team.processor-kb-account-statement-parser"
+      }
+    }
+  ]
+}
+```
 # Development
  
 This example contains runnable container with simple unittest. For local testing it is useful to include `data` folder in the root
