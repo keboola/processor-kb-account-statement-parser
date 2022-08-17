@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import re
 import tempfile
 from dataclasses import dataclass
@@ -494,6 +495,10 @@ def _parse_first_statement_row_part(row_data: List[str], statement_row_data: Sta
         statement_row_data.vs = _convert_na_to_empty(row_data[2])
         amount = _convert_to_numeric(row_data[3])
         statement_row_data.amount = amount
+
+        if math.isnan(amount):
+            logging.warning(f"Amount is nan in row: {row_data}")
+            statement_row_data.amount = 0
 
         statement_row_data.transaction_type = 'debit' if amount < 0 else 'credit'
 
