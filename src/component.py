@@ -48,11 +48,11 @@ class Component(ComponentBase):
         statement_metadata_columns.extend(list(StatementMetadata.__annotations__.keys()))
 
         self.statements_table = self.create_out_table_definition('statements.csv', incremental=True,
-                                                                 columns=statement_columns,
+                                                                 schema=statement_columns,
                                                                  is_sliced=True,
                                                                  primary_key=['pk'])
         self.statement_metadata_table = self.create_out_table_definition('statements_metadata.csv', incremental=True,
-                                                                         columns=statement_metadata_columns,
+                                                                         schema=statement_metadata_columns,
                                                                          is_sliced=True,
                                                                          primary_key=['pk'])
 
