@@ -189,8 +189,8 @@ class Component(ComponentBase):
         with open(data_path, 'w+', encoding='utf-8') as statement_out, \
                 open(metadata_path, 'w+', encoding='utf-8') as metadata_out:
 
-            data_writer = csv.DictWriter(statement_out, fieldnames=self.statements_table.columns)
-            metadata_writer = csv.DictWriter(metadata_out, fieldnames=self.statement_metadata_table.columns)
+            data_writer = csv.DictWriter(statement_out, fieldnames=self.statements_table.column_names)
+            metadata_writer = csv.DictWriter(metadata_out, fieldnames=self.statement_metadata_table.column_names)
 
             metadata_pkey = None
             idx = 0
