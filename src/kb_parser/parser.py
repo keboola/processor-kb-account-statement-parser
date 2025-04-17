@@ -17,7 +17,7 @@ MAX_CHUNK_SIZE = 1000
 PANDAS_OPTIONS = {'dtype': str}
 
 # Limit the memory for docker execution / requires JAVA 11
-JAVA_OPTIONS = '-Xmx480m -Xms480m'
+JAVA_OPTIONS = '-Xmx768m -Xms768m'
 
 # DATA_COLUMN_BOUNDARIES = [42.16, 223.0, 416.0, 465.0, 566.75]
 DATA_COLUMN_BOUNDARIES = [223.0, 416.0, 465.0, 566.75]
