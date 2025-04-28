@@ -12,12 +12,12 @@ from typing import List, Iterator, Tuple, Union, Callable
 import PyPDF2
 import tabula
 
-MAX_CHUNK_SIZE = 1000
+MAX_CHUNK_SIZE = 500
 
 PANDAS_OPTIONS = {'dtype': str}
 
 # Limit the memory for docker execution / requires JAVA 11
-JAVA_OPTIONS = '-Xmx768m -Xms768m'
+JAVA_OPTIONS = ['-Xmx900m', '-Xms512m']
 
 # DATA_COLUMN_BOUNDARIES = [42.16, 223.0, 416.0, 465.0, 566.75]
 DATA_COLUMN_BOUNDARIES = [223.0, 416.0, 465.0, 566.75]
@@ -149,7 +149,9 @@ def _load_single_page_section_from_template(file_path: str, section_name: str,
                                            pandas_options=PANDAS_OPTIONS,
                                            java_options=JAVA_OPTIONS,
                                            stream=stream,
-                                           pages=page_nr, **kwargs)[0]
+                                           pages=page_nr,
+                                           silent=True,
+                                           **kwargs)[0]
         return df.to_dict('records')
     except KeyError:
         raise ParserError(f'Statement {Path(file_path).name} does not contain the {section_name} '
@@ -357,6 +359,8 @@ def _get_full_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
                                   stream=True,
                                   pandas_options=PANDAS_OPTIONS,
                                   java_options=JAVA_OPTIONS,
+                                  silent=True,
+                                  force_subprocess=True,
                                   pages=f'{start_range}-{end_range}'):
             yield (row for row in df.to_dict('records'))
 
