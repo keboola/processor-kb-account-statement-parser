@@ -150,7 +150,7 @@ def _load_single_page_section_from_template(file_path: str, section_name: str,
                                            java_options=JAVA_OPTIONS,
                                            stream=stream,
                                            pages=page_nr,
-                                           silent=True,
+                                           force_subprocess=True,
                                            **kwargs)[0]
         return df.to_dict('records')
     except KeyError:
@@ -359,7 +359,6 @@ def _get_full_statement_rows(file_path: str) -> Iterator[Iterator[dict]]:
                                   stream=True,
                                   pandas_options=PANDAS_OPTIONS,
                                   java_options=JAVA_OPTIONS,
-                                  silent=True,
                                   force_subprocess=True,
                                   pages=f'{start_range}-{end_range}'):
             yield (row for row in df.to_dict('records'))
