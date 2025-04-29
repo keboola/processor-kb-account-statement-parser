@@ -3,3 +3,4 @@ tabula-py==2.9.3
 mock==4.0.3
 freezegun==1.1.0
 PyPDF2==1.26.0
+jpype1==1.5.1
