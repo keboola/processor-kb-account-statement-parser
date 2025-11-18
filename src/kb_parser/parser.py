@@ -544,7 +544,10 @@ def _is_end_of_statement_data(row: dict):
 def _is_date_text_split(text):
     contains_date = True
     try:
-        _split_date_from_text(text)
+        date_part, text_part = _split_date_from_text(text)
+        # to ignore date range
+        if text_part.strip().startswith('-'):
+            contains_date = False
     except Exception:
         contains_date = False
     return contains_date
