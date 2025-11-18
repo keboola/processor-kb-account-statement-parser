@@ -1,4 +1,4 @@
-FROM python:3.8.6-buster
+FROM python:3.12-slim
 ENV PYTHONIOENCODING utf-8
 
 COPY /src /code/src/
@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y build-essential
 
 # Install Java dependencies needed for Tabula
 RUN apt-get update && \
-    apt-get install -y openjdk-11-jre-headless && \
+    apt-get install -y openjdk-21-jre-headless && \
     apt-get clean;
 
 RUN pip install flake8
