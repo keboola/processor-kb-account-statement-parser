@@ -1,4 +1,4 @@
-keboola.component==1.6.7
+keboola.component==1.11.0
 tabula-py==2.9.3
 mock==4.0.3
 freezegun==1.1.0
